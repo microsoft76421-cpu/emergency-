@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Emergency Trigger</title>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background-color: #121212; color: #fff; display: flex; justify-content: center; padding: 20px; margin: 0; }
+    .card { background: #1e1e1e; width: 100%; max-width: 420px; padding: 24px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    h2 { color: #ff5252; margin-top: 0; text-align: center; }
+    .field { margin-bottom: 16px; }
+    label { display: block; margin-bottom: 6px; font-size: 14px; color: #aaa; }
+    input, select, textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #2a2a2a; color: #fff; font-size: 15px; }
+    button { width: 100%; padding: 16px; background: #ff3333; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: background 0.2s; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    .status-box { margin-top: 16px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; text-align: center; }
+    .success { background: #1b5e20; color: #a5d6a7; display: block; }
+    .warning { background: #e65100; color: #ffe0b2; display: block; }
+    .error { background: #b71c1c; color: #ffcdd2; display: block; }
+    .sms-fallback { margin-top: 15px; display: none; text-align: center; }
+    .sms-btn { background: #ff9800; display: inline-block; text-decoration: none; padding: 14px; border-radius: 8px; color: #000; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h2>🚨 SOS Emergency</h2>
+
+  <div class="field">
+    <label>Full Name</label>
+    <input type="text" id="userName" placeholder="John Doe" value="Jane Doe">
+  </div>
+
+  <div class="field">
+    <label>Emergency Type</label>
+    <select id="emergencyType">
+      <option value="Medical">Medical Emergency</option>
+      <option value="Fire">Fire / Explosion</option>
+      <option value="Accident">Vehicle Accident</option>
+      <option value="Kidnapping">Kidnapping / Assault</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Contact Phone</label>
+    <input type="tel" id="contactPhone" placeholder="+1234567890" value="+1234567890">
+  </div>
+
+  <div class="field">
+    <label>Medical Info (Optional)</label>
+    <textarea id="medicalInfo" rows="2" placeholder="Allergies, blood type, conditions...">Blood: O+, Asthmatic</textarea>
+  </div>
+
+  <button id="sosBtn" onclick="triggerSOS()">SEND SOS ALERT</button>
+
+  <div id="statusBox" class="status-box"></div>
+  
+  <div id="smsFallback" class="sms-fallback">
+    <p style="font-size: 13px; color: #bbb;">Internet unreachable. Trigger via SMS instead:</p>
+    <a id="smsLink" class="sms-btn" href="#">SEND SMS ALERT NOW</a>
+  </div>
+</div>
+
+<script>
+  const API_URL = " https://secure-kvw9.onrender.com";
+  const GATEWAY_SMS_NUMBER = "+18005550199";
+
+  async function triggerSOS() {
+    const btn = document.getElementById("sosBtn");
+    const statusBox = document.getElementById("statusBox");
+    const fallbackBox = document.getElementById("smsFallback");
+    
+    btn.disabled = true;
+    showStatus("Acquiring GPS location...", "warning");
+    fallbackBox.style.display = "none";
+
+    // Grab user form values
+    const userName = document.getElementById("userName").value;
+    const emergencyType = document.getElementById("emergencyType").value;
+    const contactPhone = document.getElementById("contactPhone").value;
+    const medicalInfo = document.getElementById("medicalInfo").value || "N/A";
+
+    if (!navigator.geolocation) {
+      showStatus("Geolocation is not supported. Dispatching without GPS...", "error");
+      await sendPayload(createPayload(0, 0, 0, userName, emergencyType, contactPhone, medicalInfo));
+      btn.disabled = false;
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const payload = createPayload(
+          position.coords.latitude,
+          position.coords.longitude,
+          position.coords.accuracy,
+          userName, emergencyType, contactPhone, medicalInfo
+        );
+        await sendPayload(payload);
+        btn.disabled = false;
+      },
+      async (error) => {
+        let errDesc = "GPS access denied/failed.";
+        if (error.code === 1) errDesc = "Location permission DENIED. Please allow location in browser settings.";
+        else if (error.code === 2) errDesc = "GPS signal unavailable.";
+        else if (error.code === 3) errDesc = "GPS acquisition timed out.";
+
+        showStatus(`⚠️ ${errDesc} Sending alert without location...`, "warning");
+        
+        // Still generate and send payload with zeroed coordinates as fallback
+        const fallbackPayload = createPayload(0, 0, 0, userName, emergencyType, contactPhone, medicalInfo);
+        setupFallbackOptions(fallbackPayload);
+        btn.disabled = false;
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+    );
+  }
+
+  function createPayload(lat, lon, acc, name, type, phone, med) {
+    return {
+      user_name: name,
+      emergency_type: type,
+      contact_phone: phone,
+      medical_info: med,
+      latitude: lat,
+      longitude: lon,
+      accuracy: acc,
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  async function sendPayload(payload) {
+    showStatus("Sending alert to emergency servers...", "warning");
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        showStatus("✅ ALERT DISPATCHED! Help is on the way.", "success");
+      } else {
+        throw new Error("Server rejected request");
+      }
+    } catch (err) {
+      showStatus("⚠️ Server unreachable. Choose an offline dispatch method below:", "warning");
+      setupFallbackOptions(payload);
+    }
+  }
+
+  function setupFallbackOptions(payload) {
+    const hasLocation = payload.latitude !== 0 && payload.longitude !== 0;
+    const mapsLink = hasLocation 
+      ? `https://www.google.com/maps?q=${payload.latitude},${payload.longitude}` 
+      : "Location Unavailable";
+    
+    // Telegram Payload formatting
+    const tgText = `🚨 EMERGENCY ALERT 🚨\n` +
+                   `👤 Name: ${payload.user_name}\n` +
+                   `⚠️ Type: ${payload.emergency_type}\n` +
+                   `📞 Phone: ${payload.contact_phone}\n` +
+                   `🏥 Medical: ${payload.medical_info}\n` +
+                   `📍 Location: ${mapsLink}`;
+                   
+    const telegramUri = `https://t.me/share/url?url=${encodeURIComponent(mapsLink)}&text=${encodeURIComponent(tgText)}`;
+
+    // SMS Compact String
+    const compactSMS = `EMG|${payload.emergency_type}|${payload.latitude.toFixed(4)}|${payload.longitude.toFixed(4)}|${Math.round(payload.accuracy)}|${payload.user_name}|${payload.contact_phone}|${payload.medical_info}`;
+    const smsUri = `sms:${GATEWAY_SMS_NUMBER}?body=${encodeURIComponent(compactSMS)}`;
+
+    const fallbackContainer = document.getElementById("smsFallback");
+    fallbackContainer.innerHTML = `
+      <p style="font-size: 13px; color: #bbb; margin-bottom: 10px;">Select alternative dispatch method:</p>
+      <a href="${telegramUri}" target="_blank" class="sms-btn" style="background: #0088cc; color: white; margin-bottom: 8px; display: block;">
+        ✈️ SEND VIA TELEGRAM
+      </a>
+      <a href="${smsUri}" class="sms-btn" style="background: #ff9800; color: black; display: block;">
+        💬 SEND VIA SMS
+      </a>
+    `;
+    fallbackContainer.style.display = "block";
+  }
+
+  function showStatus(message, type) {
+    const box = document.getElementById("statusBox");
+    box.className = `status-box ${type}`;
+    box.innerText = message;
+  }
+
+</script>
+
+</body>
+</html>
