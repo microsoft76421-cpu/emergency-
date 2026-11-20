@@ -1,4 +1,5 @@
 import math
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -6,6 +7,7 @@ import httpx
 import uvicorn
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 # ============================================================
@@ -22,7 +24,7 @@ TELEGRAM_CHAT_ID = "8145643961"
 app = FastAPI(
     title="Emergency API with Telegram Notifications",
     version="1.0.0",
-    description="Local Emergency Rescue API with Telegram notifications."
+    description="Emergency Rescue API with Telegram notifications."
 )
 
 # ============================================================
@@ -131,7 +133,7 @@ async def send_telegram_alert(alert: dict, is_cluster: bool = False):
 # ============================================================
 
 def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    radius = 6371.0  # Earth radius in km
+    radius = 6371.0
 
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
@@ -150,10 +152,8 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
 # ============================================================
 
 async def process_cluster_and_notifications(alert_data: dict):
-    # Send normal alert
     await send_telegram_alert(alert_data, is_cluster=False)
 
-    # Count nearby alerts (within 1 km)
     nearby_count = 0
     for alert in alerts_db:
         distance = haversine_distance(
@@ -172,19 +172,12 @@ async def process_cluster_and_notifications(alert_data: dict):
         await send_telegram_alert(alert_data, is_cluster=True)
 
 # ============================================================
-# ROOT ENDPOINT
+# SERVE THE WEBSITE (Frontend)
 # ============================================================
 
 @app.get("/")
-async def root():
-    return {
-        "status": "online",
-        "message": "Emergency Rescue API is running",
-        "api": "/api/v1",
-        "alert_endpoint": "/api/v1/alert",
-        "health": "/api/health",
-        "docs": "/docs"
-    }
+async def serve_frontend():
+    return FileResponse("index.html")
 
 # ============================================================
 # HEALTH CHECK
@@ -247,17 +240,20 @@ async def get_alerts():
 # ============================================================
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+
     print("=" * 60)
     print("EMERGENCY RESCUE API")
     print("=" * 60)
-    print("API:    http://127.0.0.1:8001")
-    print("Docs:   http://127.0.0.1:8001/docs")
-    print("Alert:  http://127.0.0.1:8001/api/v1/alert")
+    print(f"Running on port: {port}")
+    print("Frontend:  /")
+    print("Docs:      /docs")
+    print("Alert:     /api/v1/alert")
     print("=" * 60)
 
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8001,          # Changed to 8001 to avoid conflict
+        port=port,
         reload=False
     )

@@ -537,7 +537,7 @@
     </div>
     <div class="system-status">
         <span class="status-dot"></span>
-        Local System Online
+        System Online
     </div>
 </header>
 
@@ -548,7 +548,7 @@
         <h2>Emergency SOS</h2>
         <p>
             Provide the incident details below and dispatch an emergency
-            alert with your current location to the local rescue system.
+            alert with your current location to the rescue system.
         </p>
     </section>
 
@@ -642,7 +642,7 @@
                         <div class="connection-icon">◉</div>
                         <div>
                             <strong>Emergency API</strong>
-                            <small>127.0.0.1:8001</small>
+                            <small id="apiAddress">Connected</small>
                         </div>
                     </div>
                     <div class="connected">ONLINE</div>
@@ -668,7 +668,7 @@
                 </div>
                 <div class="summary-item">
                     <div class="summary-label">Dispatch Mode</div>
-                    <div class="summary-value">Local FastAPI</div>
+                    <div class="summary-value">Cloud FastAPI</div>
                 </div>
             </div>
 
@@ -686,16 +686,18 @@
     </section>
 
     <footer>
-        Emergency Rescue System · Local Emergency Dispatch Platform
+        Emergency Rescue System · Emergency Dispatch Platform
     </footer>
 
 </main>
 
 <script>
     // ============================================================
-    // LOCAL FASTAPI CONFIGURATION
+    // ⚠️ IMPORTANT: CHANGE THIS TO YOUR RENDER BACKEND URL
     // ============================================================
-    const API_URL = "http://127.0.0.1:8001/api/v1/alert";
+    const API_URL = "https://emergency-2-uwqn.onrender.com/api/v1/alert";
+    // Example: "https://emergency-rescue-api.onrender.com/api/v1/alert"
+
     const GATEWAY_SMS_NUMBER = "+18005550199";
 
     // ============================================================
@@ -812,16 +814,16 @@
     }
 
     // ============================================================
-    // SEND TO LOCAL FASTAPI  (FIXED)
+    // SEND TO FASTAPI
     // ============================================================
     async function sendPayload(payload) {
-        showStatus("warning", "Dispatching emergency alert", "Connecting to your local Emergency Rescue API.", "📡");
+        showStatus("warning", "Dispatching emergency alert", "Connecting to the Emergency Rescue API.", "📡");
 
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-            const response = await fetch(API_URL, {          // ← FIXED (no extra /alert)
+            const response = await fetch(API_URL, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -845,7 +847,7 @@
                 showStatus(
                     "success",
                     "SOS alert dispatched",
-                    "Your emergency alert was successfully received by the local Emergency Rescue API.",
+                    "Your emergency alert was successfully received by the Emergency Rescue API.",
                     "✓"
                 );
                 return;
@@ -857,7 +859,7 @@
 
             showStatus(
                 "error",
-                "Local server unavailable",
+                "Server unavailable",
                 "The Emergency Rescue API could not be reached. Use an alternative dispatch method below.",
                 "⚠️"
             );
