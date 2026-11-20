@@ -1,14 +1,26 @@
+
 import math
 import os
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
 import uvicorn
+
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+
+# ============================================================
+# PROJECT DIRECTORY
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent
+FRONTEND_FILE = BASE_DIR / "static" / "index.html"
+
 
 # ============================================================
 # TELEGRAM CONFIGURATION
@@ -16,6 +28,7 @@ from pydantic import BaseModel
 
 TELEGRAM_BOT_TOKEN = "8976557269:AAEAZ_KUFPrk2qxrSdoqcH7MCcFufwvx42k"
 TELEGRAM_CHAT_ID = "8145643961"
+
 
 # ============================================================
 # FASTAPI APPLICATION
@@ -27,6 +40,7 @@ app = FastAPI(
     description="Emergency Rescue API with Telegram notifications."
 )
 
+
 # ============================================================
 # CORS
 # ============================================================
@@ -34,16 +48,18 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ============================================================
 # TEMPORARY ALERT DATABASE
 # ============================================================
 
 alerts_db = []
+
 
 # ============================================================
 # EMERGENCY PAYLOAD
@@ -59,11 +75,13 @@ class EmergencyPayload(BaseModel):
     medical_info: Optional[str] = None
     timestamp: Optional[str] = None
 
+
 # ============================================================
 # TELEGRAM NOTIFICATION
 # ============================================================
 
 async def send_telegram_alert(alert: dict, is_cluster: bool = False):
+
     if not TELEGRAM_BOT_TOKEN:
         print("Telegram bot token is not configured.")
         return
@@ -72,19 +90,35 @@ async def send_telegram_alert(alert: dict, is_cluster: bool = False):
         print("Telegram chat ID is not configured.")
         return
 
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    telegram_url = (
+        f"https://api.telegram.org/bot"
+        f"{TELEGRAM_BOT_TOKEN}/sendMessage"
+    )
 
-    maps_link = f"https://www.google.com/maps?q={alert['latitude']},{alert['longitude']}"
+    maps_link = (
+        f"https://www.google.com/maps?q="
+        f"{alert['latitude']},{alert['longitude']}"
+    )
 
     if is_cluster:
+
         message = (
             "🚨 MAJOR INCIDENT CLUSTER DETECTED 🚨\n\n"
-            "Multiple emergency alerts have been registered near this location.\n\n"
-            f"📍 Coordinates: {alert['latitude']}, {alert['longitude']}\n"
+            "Multiple emergency alerts have been registered "
+            "near this location.\n\n"
+            f"📍 Coordinates: {alert['latitude']}, "
+            f"{alert['longitude']}\n"
             f"🗺️ Location: {maps_link}"
         )
+
     else:
-        medical_notes = alert.get("medical_info") if alert.get("medical_info") else "N/A"
+
+        medical_notes = (
+            alert.get("medical_info")
+            if alert.get("medical_info")
+            else "N/A"
+        )
+
         accuracy = alert.get("accuracy") or 0
 
         message = (
@@ -99,7 +133,9 @@ async def send_telegram_alert(alert: dict, is_cluster: bool = False):
         )
 
     try:
+
         async with httpx.AsyncClient(timeout=15.0) as client:
+
             response = await client.post(
                 telegram_url,
                 json={
@@ -123,16 +159,25 @@ async def send_telegram_alert(alert: dict, is_cluster: bool = False):
 
     except httpx.TimeoutException:
         print("Telegram request timed out.")
+
     except httpx.RequestError as e:
         print(f"Telegram connection error: {e}")
+
     except Exception as e:
         print(f"Unexpected Telegram error: {e}")
+
 
 # ============================================================
 # HAVERSINE DISTANCE
 # ============================================================
 
-def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+def haversine_distance(
+    lat1: float,
+    lon1: float,
+    lat2: float,
+    lon2: float
+) -> float:
+
     radius = 6371.0
 
     dlat = math.radians(lat2 - lat1)
@@ -145,39 +190,67 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
         * math.sin(dlon / 2) ** 2
     )
 
-    return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    a = max(0.0, min(1.0, a))
+
+    return radius * 2 * math.atan2(
+        math.sqrt(a),
+        math.sqrt(1 - a)
+    )
+
 
 # ============================================================
 # CLUSTER DETECTION AND NOTIFICATIONS
 # ============================================================
 
 async def process_cluster_and_notifications(alert_data: dict):
+
     await send_telegram_alert(alert_data, is_cluster=False)
 
     nearby_count = 0
+
     for alert in alerts_db:
+
         distance = haversine_distance(
             alert_data["latitude"],
             alert_data["longitude"],
             alert["latitude"],
             alert["longitude"]
         )
+
         if distance <= 1.0:
             nearby_count += 1
 
     print(f"Nearby emergency alerts: {nearby_count}")
 
     if nearby_count >= 3:
+
         print("Major incident cluster detected!")
-        await send_telegram_alert(alert_data, is_cluster=True)
+
+        await send_telegram_alert(
+            alert_data,
+            is_cluster=True
+        )
+
 
 # ============================================================
-# SERVE THE WEBSITE (Frontend)
+# SERVE THE WEBSITE (FRONTEND)
 # ============================================================
 
 @app.get("/")
 async def serve_frontend():
-    return FileResponse("index.html")
+
+    if not FRONTEND_FILE.is_file():
+        return {
+            "status": "ERROR",
+            "message": "Frontend file not found.",
+            "expected_file": str(FRONTEND_FILE)
+        }
+
+    return FileResponse(
+        str(FRONTEND_FILE),
+        media_type="text/html"
+    )
+
 
 # ============================================================
 # HEALTH CHECK
@@ -185,7 +258,11 @@ async def serve_frontend():
 
 @app.get("/api/health")
 async def health_check():
-    telegram_configured = bool(TELEGRAM_BOT_TOKEN) and bool(TELEGRAM_CHAT_ID)
+
+    telegram_configured = (
+        bool(TELEGRAM_BOT_TOKEN)
+        and bool(TELEGRAM_CHAT_ID)
+    )
 
     return {
         "status": "healthy",
@@ -193,15 +270,26 @@ async def health_check():
         "alerts_received": len(alerts_db)
     }
 
+
 # ============================================================
 # CREATE EMERGENCY ALERT
 # ============================================================
 
 @app.post("/api/v1/alert", status_code=201)
-async def create_alert(payload: EmergencyPayload, background_tasks: BackgroundTasks):
+async def create_alert(
+    payload: EmergencyPayload,
+    background_tasks: BackgroundTasks
+):
+
     alert_record = payload.model_dump()
+
     alert_record["id"] = len(alerts_db) + 1
-    alert_record["received_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    alert_record["received_at"] = (
+        datetime.now(timezone.utc).strftime(
+            "%Y-%m-%d %H:%M:%S UTC"
+        )
+    )
 
     alerts_db.append(alert_record)
 
@@ -212,10 +300,16 @@ async def create_alert(payload: EmergencyPayload, background_tasks: BackgroundTa
     print(f"Name: {alert_record['user_name']}")
     print(f"Emergency: {alert_record['emergency_type']}")
     print(f"Phone: {alert_record['contact_phone']}")
-    print(f"Location: {alert_record['latitude']}, {alert_record['longitude']}")
+    print(
+        f"Location: {alert_record['latitude']}, "
+        f"{alert_record['longitude']}"
+    )
     print("=" * 60)
 
-    background_tasks.add_task(process_cluster_and_notifications, alert_record)
+    background_tasks.add_task(
+        process_cluster_and_notifications,
+        alert_record
+    )
 
     return {
         "status": "SUCCESS",
@@ -223,23 +317,27 @@ async def create_alert(payload: EmergencyPayload, background_tasks: BackgroundTa
         "alert_id": alert_record["id"]
     }
 
+
 # ============================================================
 # GET ALL ALERTS
 # ============================================================
 
 @app.get("/api/v1/alerts")
 async def get_alerts():
+
     return {
         "status": "SUCCESS",
         "count": len(alerts_db),
         "alerts": alerts_db
     }
 
+
 # ============================================================
 # START SERVER
 # ============================================================
 
 if __name__ == "__main__":
+
     port = int(os.environ.get("PORT", 8000))
 
     print("=" * 60)
